@@ -132,50 +132,104 @@ def plot_histogram(hist, title):
     plt.plot(hist[1], color='g')
     plt.plot(hist[2], color='b')
     plt.show()
+
+def group_by_similarity(input_dir, threshold):
+
+    image_paths = sorted(glob.glob(os.path.join(input_dir, "*.jpg")))
+    #take the first image and put following images in the same folder if their distance is below the threshold,
+    #otherwise create a new folder and take the image above the threshold as new reference
+    if not image_paths:
+        print("No images found in input folder:", input_dir)
+        return
+    group_index = 0
+    reference_hist = None
+    target_dir = os.path.join(input_dir, f"similar-{group_index}")
+    os.makedirs(target_dir, exist_ok=True) #create first group folder
+    for i, img_path in enumerate(image_paths):
+        with open(os.path.join(input_dir, "histograms", f"{os.path.splitext(os.path.basename(img_path))[0]}_histogram.json"), "r") as f:
+            hist = json.load(f)
+            hist = np.array([hist["red"], hist["green"], hist["blue"]],dtype=np.float32) #First index indicates the channel
+        if i == 0: #first image is the reference, put it in the first similarity folder and go to next image
+            reference_hist = hist
+            #move image to target dir
+            dst_path = os.path.join(target_dir, os.path.basename(img_path))
+            os.replace(img_path, dst_path)
+            continue
+        distance = histogram_distance(reference_hist, hist)
+        if distance < threshold:
+            #move image to similarity dir
+            dst_path = os.path.join(target_dir, os.path.basename(img_path))
+            os.replace(img_path, dst_path)
+        else:
+            #create new similarity folder and update reference histogram
+            group_index += 1
+            target_dir = os.path.join(input_dir, f"similar-{group_index}")
+            os.makedirs(target_dir, exist_ok=True)
+            #move image to new target dir
+            dst_path = os.path.join(target_dir, os.path.basename(img_path))
+            os.replace(img_path, dst_path)
+            reference_hist = hist
+
+def common_histogram_and_white_balance():
+    pass
 if __name__ == "__main__":
+
+    CHI_SQUARE_THRESHOLD = 0.5
     resize_images("./input", "./output", size=512)
     create_histograms("./output")
-    # Example of computing Chi-Square distance between two histograms
-    start_val, end_val = 0, 255  # Exclude first and last bins as they contain possibly over/under-exposed pixels
-    with open("./output/histograms/100000_histogram.json", "r") as f:
-        histA = json.load(f)
-        histA = np.array([histA["red"][start_val:end_val], histA["green"][start_val:end_val], histA["blue"][start_val:end_val]],dtype=np.float32) #First index indicates the channel
-        #print(histA.shape)
-    with open("./output/histograms/100001_histogram.json", "r") as f:
-        histB = json.load(f)
-        histB = np.array([histB["red"][start_val:end_val], histB["green"][start_val:end_val], histB["blue"][start_val:end_val]],dtype=np.float32)  # Combine channels for distance calculation
-    distance = histogram_distance(histA, histB)
-    b_dist=bhattacharyya_distance(histA, histB)
+    group_by_similarity("./output", CHI_SQUARE_THRESHOLD)
 
-    #as a test, calculate distance between first histogram and all histograms in the folder
-    image_paths = sorted(glob.glob(os.path.join("./output/histograms/", "*_histogram.json")))
-    #print(image_paths)
-    #np array to store distances
-    distances = np.zeros((len(image_paths), 2)) #2 distances for each image
-    for i, img_path in enumerate(image_paths):
-        with open(img_path, "r") as f:
-            hist = json.load(f)
-            hist = np.array([hist["red"][start_val:end_val], hist["green"][start_val:end_val], hist["blue"][start_val:end_val]],dtype=np.float32) #First index indicates the channel
-            distances[i, 0] = histogram_distance(histA, hist)
-            distances[i, 1] = bhattacharyya_distance(histA, hist)
-    #save distances as csv
-    np.savetxt("distances.csv", distances, delimiter=",", header="Chi-Square,Bhattacharyya", comments='')
-    #plot distances in two different plots in the same figure
-    plt.figure()
-    plt.subplot(2, 1, 1)
-    plt.title("Chi-Square Distances from Image 100000")
-    plt.xlabel("Image Index")
-    plt.ylabel("Chi-Square Distance")
-    plt.plot(distances[:, 0], marker='o')
-    plt.subplot(2, 1, 2)
-    plt.title("Bhattacharyya Distances from Image 100000")
-    plt.xlabel("Image Index")
-    plt.ylabel("Bhattacharyya Distance")
-    plt.plot(distances[:, 1], marker='o', color='orange')
-    plt.tight_layout()
-    plt.show()
+    # # Example of computing Chi-Square distance between two histograms
+    # start_val, end_val = 0, 255  # Exclude first and last bins as they contain possibly over/under-exposed pixels
+    # with open("./output/histograms/100000_histogram.json", "r") as f:
+    #     histA = json.load(f)
+    #     histA = np.array([histA["red"][start_val:end_val], histA["green"][start_val:end_val], histA["blue"][start_val:end_val]],dtype=np.float32) #First index indicates the channel
+    #     #print(histA.shape)
+    # with open("./output/histograms/100001_histogram.json", "r") as f:
+    #     histB = json.load(f)
+    #     histB = np.array([histB["red"][start_val:end_val], histB["green"][start_val:end_val], histB["blue"][start_val:end_val]],dtype=np.float32)  # Combine channels for distance calculation
+    # distance = histogram_distance(histA, histB)
+    # b_dist=bhattacharyya_distance(histA, histB)
 
-    plot_histogram(histA, "Histogram of Image 100000")
-    plot_histogram(histB, "Histogram of Image 100001")
-    # print(f"Chi-Square distance between histograms: {distance}")
-    # print(f"Bhattacharyya distance between histograms: {b_dist}")
+    # #as a test, calculate distance between first histogram and all histograms in the folder
+    # image_paths = sorted(glob.glob(os.path.join("./output/histograms/", "*_histogram.json")))
+    # #print(image_paths)
+    # #np array to store distances
+    # distances = np.zeros((len(image_paths), 2)) #2 distances for each image
+    # for i, img_path in enumerate(image_paths):
+    #     with open(img_path, "r") as f:
+    #         hist = json.load(f)
+    #         hist = np.array([hist["red"][start_val:end_val], hist["green"][start_val:end_val], hist["blue"][start_val:end_val]],dtype=np.float32) #First index indicates the channel
+    #         distances[i, 0] = histogram_distance(histA, hist)
+    #         distances[i, 1] = bhattacharyya_distance(histA, hist)
+    # #save distances as csv
+    # np.savetxt("distances.csv", distances, delimiter=",", header="Chi-Square,Bhattacharyya", comments='')
+
+    # target_dir = os.path.join("./output", "similar-0")
+    # os.makedirs(target_dir, exist_ok=True)
+    # for fname in os.listdir("./output"):
+    #     src_path = os.path.join("./output", fname)
+    #     if os.path.isfile(src_path):
+    #         dst_path = os.path.join(target_dir, fname)
+    #         # use os.replace to move/overwrite atomically and avoid issues with existing files
+    #         os.replace(src_path, dst_path)
+
+    # #plot distances in two different plots in the same figure
+    # plt.figure()
+    # plt.subplot(2, 1, 1)
+    # plt.title("Chi-Square Distances from Image 100000")
+    # plt.xlabel("Image Index")
+    # plt.ylabel("Chi-Square Distance")
+    # plt.plot(distances[:, 0], marker='o')
+    # plt.subplot(2, 1, 2)
+    # plt.title("Bhattacharyya Distances from Image 100000")
+    # plt.xlabel("Image Index")
+    # plt.ylabel("Bhattacharyya Distance")
+    # plt.plot(distances[:, 1], marker='o', color='orange')
+    # plt.tight_layout()
+    # plt.show()
+
+    # plot_histogram(histA, "Histogram of Image 100000")
+    # plot_histogram(histB, "Histogram of Image 100001")
+    # # print(f"Chi-Square distance between histograms: {distance}")
+    # # print(f"Bhattacharyya distance between histograms: {b_dist}")
