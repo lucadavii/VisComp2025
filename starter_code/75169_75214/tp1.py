@@ -170,14 +170,59 @@ def group_by_similarity(input_dir, threshold):
             os.replace(img_path, dst_path)
             reference_hist = hist
 
-def common_histogram_and_white_balance():
-    pass
+def common_histogram_and_white_balance(input_dir):
+    similarity_folders = sorted(glob.glob(os.path.join(input_dir, "similar-*")))
+    for folder in similarity_folders:
+        image_paths = sorted(glob.glob(os.path.join(folder, "*.jpg")))
+        if not image_paths:
+            print("No images found in folder:", folder)
+            continue
+        #compute common histogram
+        common_hist = np.zeros((3, 256), dtype=np.float32)
+        for img_path in image_paths:
+            with open(os.path.join(input_dir, "histograms", f"{os.path.splitext(os.path.basename(img_path))[0]}_histogram.json"), "r") as f:
+                hist = json.load(f)
+                hist = np.array([hist["red"], hist["green"], hist["blue"]],dtype=np.float32) #First index indicates the channel
+                common_hist += hist
+        common_hist /= len(image_paths)  #average histogram
+        print(f"Common histogram computed for folder {folder}")
+        with open(os.path.join(folder, "common_histogram.json"), "w") as json_file:
+            hist_data = {
+                "red": common_hist[0].tolist(),
+                "green": common_hist[1].tolist(),
+                "blue": common_hist[2].tolist()
+            }
+            json.dump(hist_data, json_file, indent=4)
+
+
+        #apply histogram equalization to each image based on the common histogram
+        avg_rgb = np.zeros(3, dtype=np.float32)
+        for c in range(3):
+            #compute average pixel value for each channel from common histogram
+            avg_rgb[c] = np.sum(np.arange(256) * common_hist[c]) / np.sum(common_hist[c])
+        avg_grey = np.mean(avg_rgb)
+
+        for img_path in image_paths:
+            img = cv.imread(img_path)
+            img_rgb = cv.cvtColor(img, cv.COLOR_BGR2RGB)
+            #apply white balance
+            img_wb = img_rgb.astype(np.float32)
+            for c in range(3):
+                img_wb[:,:,c] = img_wb[:,:,c] * (avg_grey / avg_rgb[c])
+            #clip values to [0,255] and convert back to uint8
+            img_wb = np.clip(img_wb, 0, 255).astype(np.uint8)
+            #save white balanced image
+            out_path = os.path.join(folder, f"wb_{os.path.basename(img_path)}")
+            img_wb_bgr = cv.cvtColor(img_wb, cv.COLOR_RGB2BGR)
+            cv.imwrite(out_path, img_wb_bgr)
+            print(f"White balanced image saved for {img_path}")
 if __name__ == "__main__":
 
     CHI_SQUARE_THRESHOLD = 0.5
     resize_images("./input", "./output", size=512)
     create_histograms("./output")
     group_by_similarity("./output", CHI_SQUARE_THRESHOLD)
+    common_histogram_and_white_balance("./output")
 
     # # Example of computing Chi-Square distance between two histograms
     # start_val, end_val = 0, 255  # Exclude first and last bins as they contain possibly over/under-exposed pixels
