@@ -13,6 +13,7 @@ import os
 import glob
 import matplotlib.pyplot as plt
 import json
+from myMOPS import myMOPS
 
 #Resize every image in the input folder maintaining the aspect-ratio of the images. The
 #smaller side of each image should be 512 pixels using cv2. I have an output and imput directory and all the images are
@@ -194,8 +195,41 @@ def common_histogram_and_white_balance(input_dir):
             }
             json.dump(hist_data, json_file, indent=4)
 
+        #Extra points if you print the histograms of all images together with the average histogram with labels in a single image figure.
+        #for each histogram, plot it in a subfigure and save the figure as an image
+        num_images = len(image_paths)
+        cols = 3
+        total_plots = num_images + 1  # include common histogram
+        rows = (total_plots + cols - 1) // cols
+        plt.figure(figsize=(15, 5 * rows))
+        for i, img_path in enumerate(image_paths):
+            with open(os.path.join(input_dir, "histograms", f"{os.path.splitext(os.path.basename(img_path))[0]}_histogram.json"), "r") as f:
+                hist = json.load(f)
+                hist = np.array([hist["red"], hist["green"], hist["blue"]],dtype=np.float32) #First index indicates the channel
+            plt.subplot(rows, cols, i + 1)
+            plt.title(f"Histogram of {os.path.basename(img_path)}")
+            plt.xlabel("Pixel value")
+            plt.ylabel("Frequency")
+            plt.xlim([0, 256])
+            plt.plot(hist[0], color='r')
+            plt.plot(hist[1], color='g')
+            plt.plot(hist[2], color='b')
+        #plot common histogram in the next available subplot
+        plt.subplot(rows, cols, num_images + 1)
+        plt.title("Common Histogram")
+        plt.xlabel("Pixel value")
+        plt.ylabel("Frequency")
+        plt.xlim([0, 256])
+        plt.plot(common_hist[0], color='r')
+        plt.plot(common_hist[1], color='g')
+        plt.plot(common_hist[2], color='b')
+        plt.tight_layout()
+        plt.savefig(os.path.join(folder, "histograms_comparison.png"))
+        plt.close()
+        print(f"Histogram comparison figure saved for folder {folder}")
 
         #apply histogram equalization to each image based on the common histogram
+        ## TODO: substitute original image with white-balanced image
         avg_rgb = np.zeros(3, dtype=np.float32)
         for c in range(3):
             #compute average pixel value for each channel from common histogram
@@ -219,10 +253,56 @@ def common_histogram_and_white_balance(input_dir):
 if __name__ == "__main__":
 
     CHI_SQUARE_THRESHOLD = 0.5
+    #############################################################################
+    # REMOVE THIS BLOCK BEFORE SUBMISSION
+    #
+    #############################################################################
+    #viscomp2025/starter_code/75169_75214/tp1.py
+    #cwd must be viscomp2025/starter_code in order to create input and output directories correctly.
+    #vscode sets the cwd to the folder where the script is located, so we need to change it back to starter_code (parent folder)
+    if not os.getcwd().endswith("starter_code"):
+        print("Changing working directory to starter_code")
+        os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        print("Current working directory:", os.getcwd())
+    #set input folder (already existing) as readonly
+    os.chmod("./input", 0o555)  #read and execute permissions
+    # if the output folder isn't empty, clear it
+    if os.path.exists("./output"):
+        files = glob.glob(os.path.join("./output", "*"))
+        for f in files:
+            if os.path.isfile(f):
+                os.remove(f)
+            elif os.path.isdir(f):
+                import shutil
+                shutil.rmtree(f)
+    else:
+        os.makedirs("./output", exist_ok=True)
+    #exit()
+    #############################################################################
     resize_images("./input", "./output", size=512)
     create_histograms("./output")
     group_by_similarity("./output", CHI_SQUARE_THRESHOLD)
     common_histogram_and_white_balance("./output")
+
+    myMOPS_instance = myMOPS()
+    img1 = cv.imread("./input/109900.jpg")
+    img2 = cv.imread("./input/109901.jpg")
+
+    points1 = myMOPS_instance.my_track_points(cv.cvtColor(img1, cv.COLOR_BGR2GRAY), maxCorners=100, qualityLevel=0.01, minDistance=10)
+    print(f"Tracked {len(points1)} points in Image 1")
+    print(points1)
+    
+    points2 = myMOPS_instance.my_track_points(cv.cvtColor(img2, cv.COLOR_BGR2GRAY), maxCorners=100, qualityLevel=0.01, minDistance=10)
+    print(f"Tracked {len(points2)} points in Image 2")
+    print(points2)
+
+    
+    matched_img=myMOPS_instance.my_draw_matches(img1, img2)
+    cv.imshow("My MOPS Matches", matched_img)
+    cv.waitKey(0)
+    cv.destroyAllWindows()
+
+
 
     # # Example of computing Chi-Square distance between two histograms
     # start_val, end_val = 0, 255  # Exclude first and last bins as they contain possibly over/under-exposed pixels
