@@ -284,9 +284,113 @@ def match_images_SIFT(img1, img2):
     # Draw matches
     matched_image = cv.drawMatches(img1, keypoints1, img2, keypoints2, good_matches, None)
     return matched_image
+# for every similar folder, compare each image with the first image of the folder and
+# verify if it is identical. If it is, save the keypoint comparison in a file named
+# `equal-0.jpg, equal-1.jpg, etc' in the same folder.
+def check_identical_images(input_dir):
+    similarity_folders = sorted(glob.glob(os.path.join(input_dir, "similar-*")))
+    for folder in similarity_folders:
+        #use only white-balanced images for identical check
+        image_paths = sorted(glob.glob(os.path.join(folder, "wb_*.jpg")))
+        if not image_paths:
+            print("No images found in folder:", folder)
+            continue
+        reference_img = cv.imread(image_paths[0])
+        #compare with other images using sift
+        sift = cv.SIFT_create()
+        gray_ref = cv.cvtColor(reference_img, cv.COLOR_BGR2GRAY)
+        keypoints_ref, descriptors_ref = sift.detectAndCompute(gray_ref, None)
+        equal_index = 0
+        for img_path in image_paths[1:]:
+            img = cv.imread(img_path)
+            gray_img = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+            keypoints_img, descriptors_img = sift.detectAndCompute(gray_img, None)
+
+            # FLANN parameters
+            FLANN_INDEX_KDTREE = 1
+            index_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=5)
+            search_params = dict(checks=50)
+
+            flann = cv.FlannBasedMatcher(index_params, search_params)
+
+            matches = flann.knnMatch(descriptors_ref, descriptors_img, k=2)
+
+            # Store all the good matches as per Lowe's ratio test.
+            good_matches = []
+            for m, n in matches:
+                if m.distance < 0.7 * n.distance:
+                    good_matches.append(m)
+            # If number of good matches is above a threshold, consider images identical, namely 70% of keypoints matched
+            if len(good_matches) > 500:
+                print(f"Images {os.path.basename(image_paths[0])} and {os.path.basename(img_path)} are identical with {len(good_matches)} good matches.")
+                matched_image = cv.drawMatches(reference_img, keypoints_ref, img, keypoints_img, good_matches, None)
+                out_path = os.path.join(folder, f"equal-{equal_index}.jpg")
+                cv.imwrite(out_path, matched_image)
+                equal_index += 1
+def print_statistics(dir):
+    #For each similar folder print the following output:
+    # similar-{a} number of images: {b} ground-truth: {c} precision: {d} averagecolor: {e}
+    # * {a} is the sequential number of similar.
+    # * {b} is the number of images in that folder.
+    # * {c} is the number of correct matches according to the `groundtruth.json`.
+    # * {d} is the precision with 3 decimal points $precision=1-(abs(b-c)/c)$
+    # * {e} is the RGB value of the average color of that folder(before white
+    # balance)
+    # • in the end, there should be a global count for all the folders
+    # TOTAL number of images: {b} ground-truth: {c} precision: {d}
+    similarity_folders = sorted(glob.glob(os.path.join(dir, "similar-*")))
+    total_images = 0
+    total_groundtruth = 0
+
+    with open("./input/groundtruth.json", "r") as f:
+        groundtruth_data = json.load(f)
+
+
+    for folder in similarity_folders:
+        #consider images before white balance for counting
+        unbalanced_image_paths = [p for p in sorted(glob.glob(os.path.join(folder, "*.jpg"))) if len(os.path.basename(p)) == 10] 
+        #count matches: first image is query field, following images are in similar field
+        folder_idx = os.path.basename(folder).split("-")[1]
+        query_img_name = os.path.basename(unbalanced_image_paths[0])
+        similar_imgs_names = [os.path.basename(p) for p in unbalanced_image_paths[1:]]
+
+        #correct matches according to groundtruth
+        good_matches=0
+        if folder_idx in groundtruth_data.keys() and query_img_name == groundtruth_data[folder_idx]["query"]:
+            good_matches += 1 #count query image as good match
+            groundtruth_similar = groundtruth_data[folder_idx]["similar"]
+            for img_name in similar_imgs_names:
+                if img_name in groundtruth_similar:
+                    good_matches += 1
+        #b is number of images in that folder
+        num_images = len(unbalanced_image_paths)  #include query image
+        #c is good_matches, counting also query image
+        
+        if good_matches == 0:
+            precision = 0.0
+        else:        
+            precision = 1 - (np.abs(num_images - good_matches) / (good_matches + 1e-10))
+
+        #cumulative totals
+        total_images += num_images
+        total_groundtruth += good_matches
+        #compute average color before white balance
+        avg_color = np.zeros(3, dtype=np.float32)
+
+        for img_path in unbalanced_image_paths:
+            img = cv.imread(img_path)
+            img_rgb = cv.cvtColor(img, cv.COLOR_BGR2RGB)
+            for c in range(3):
+                avg_color[c] += np.mean(img_rgb[:,:,c])
+        avg_color /= num_images
+        print(f"{os.path.basename(folder)} number of images: {num_images} ground-truth: {good_matches} precision: {precision:.3f} averagecolor: {avg_color.astype(np.uint8).tolist()}")
+    total_precision = 1 - (abs(total_images - total_groundtruth) / (total_groundtruth + 1e-10))
+    print(f"TOTAL number of images: {total_images} ground-truth: {total_groundtruth} precision: {total_precision:.3f}")
+
+
 if __name__ == "__main__":
 
-    CHI_SQUARE_THRESHOLD = 0.5
+    CHI_SQUARE_THRESHOLD = 0.545
     #############################################################################
     # REMOVE THIS BLOCK BEFORE SUBMISSION
     #
@@ -326,6 +430,9 @@ if __name__ == "__main__":
     #stack images vertically
     combined_img = np.vstack((mops_compared_img, sift_compared_img))
     cv.imwrite("./output/my_match.jpg", combined_img)
+
+    check_identical_images("./output")
+    print_statistics("./output")
     # points1 = myMOPS_instance.my_track_points(cv.cvtColor(img1, cv.COLOR_BGR2GRAY), maxCorners=100, qualityLevel=0.01, minDistance=10)
     # print(f"Tracked {len(points1)} points in Image 1")
     # print(points1)

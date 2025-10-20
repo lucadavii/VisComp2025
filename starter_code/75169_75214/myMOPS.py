@@ -42,7 +42,8 @@ class myMOPS:
         x,y = float(point[0]), float(point[1])
         img_window = cv.getRectSubPix(img, (window_size, window_size), (x, y))
         # Compute gradients
-
+        # pre blur to reduce noise
+        img_window = cv.GaussianBlur(img_window, (5,5), sigmaX=1.0)
         sobelx = cv.Sobel(img_window, ddepth=cv.CV_32F, dx=1, dy=0, ksize=3)
         sobely = cv.Sobel(img_window, ddepth=cv.CV_32F, dx=0, dy=1, ksize=3)
 
