@@ -250,6 +250,40 @@ def common_histogram_and_white_balance(input_dir):
             img_wb_bgr = cv.cvtColor(img_wb, cv.COLOR_RGB2BGR)
             cv.imwrite(out_path, img_wb_bgr)
             print(f"White balanced image saved for {img_path}")
+def match_images_MOPS(img1, img2):
+    myMOPS_instance = myMOPS()
+    matched_img=myMOPS_instance.my_draw_matches(img1, img2)
+    return matched_img
+def match_images_SIFT(img1, img2):
+    # Initialize SIFT detector
+    sift = cv.SIFT_create()
+
+    # Find the keypoints and descriptors with SIFT
+    gray1 = cv.cvtColor(img1, cv.COLOR_BGR2GRAY)
+    gray2 = cv.cvtColor(img2, cv.COLOR_BGR2GRAY)
+    keypoints1, descriptors1 = sift.detectAndCompute(gray1, None)
+    keypoints2, descriptors2 = sift.detectAndCompute(gray2, None)
+
+    # FLANN parameters
+    FLANN_INDEX_KDTREE = 1
+    index_params = dict(algorithm=FLANN_INDEX_KDTREE, trees=5)
+    search_params = dict(checks=50)
+
+    flann = cv.FlannBasedMatcher(index_params, search_params)
+
+    matches = flann.knnMatch(descriptors1, descriptors2, k=2)
+
+    # Store all the good matches as per Lowe's ratio test.
+    good_matches = []
+    for m, n in matches:
+        if m.distance < 0.7 * n.distance:
+            good_matches.append(m)
+    #keep first 100 matches only
+    if len(good_matches) > 100:
+        good_matches = good_matches[:100]
+    # Draw matches
+    matched_image = cv.drawMatches(img1, keypoints1, img2, keypoints2, good_matches, None)
+    return matched_image
 if __name__ == "__main__":
 
     CHI_SQUARE_THRESHOLD = 0.5
@@ -287,20 +321,42 @@ if __name__ == "__main__":
     myMOPS_instance = myMOPS()
     img1 = cv.imread("./input/109900.jpg")
     img2 = cv.imread("./input/109901.jpg")
-
-    points1 = myMOPS_instance.my_track_points(cv.cvtColor(img1, cv.COLOR_BGR2GRAY), maxCorners=100, qualityLevel=0.01, minDistance=10)
-    print(f"Tracked {len(points1)} points in Image 1")
-    print(points1)
+    mops_compared_img = match_images_MOPS(img1, img2)
+    sift_compared_img = match_images_SIFT(img1, img2)
+    #stack images vertically
+    combined_img = np.vstack((mops_compared_img, sift_compared_img))
+    cv.imwrite("./output/my_match.jpg", combined_img)
+    # points1 = myMOPS_instance.my_track_points(cv.cvtColor(img1, cv.COLOR_BGR2GRAY), maxCorners=100, qualityLevel=0.01, minDistance=10)
+    # print(f"Tracked {len(points1)} points in Image 1")
+    # print(points1)
     
-    points2 = myMOPS_instance.my_track_points(cv.cvtColor(img2, cv.COLOR_BGR2GRAY), maxCorners=100, qualityLevel=0.01, minDistance=10)
-    print(f"Tracked {len(points2)} points in Image 2")
-    print(points2)
-
+    # points2 = myMOPS_instance.my_track_points(cv.cvtColor(img2, cv.COLOR_BGR2GRAY), maxCorners=100, qualityLevel=0.01, minDistance=10)
+    # print(f"Tracked {len(points2)} points in Image 2")
+    # print(points2)
     
-    matched_img=myMOPS_instance.my_draw_matches(img1, img2)
-    cv.imshow("My MOPS Matches", matched_img)
-    cv.waitKey(0)
-    cv.destroyAllWindows()
+    # point_rotation1 = myMOPS_instance.my_point_rotation(img1, points1[0], window_size=40)
+    # print(f"Point rotation for first point in Image 1: {np.degrees(point_rotation1)} degrees")
+
+    # point_rotation2 = myMOPS_instance.my_point_rotation(img2, points2[0], window_size=40)
+    # print(f"Point rotation for first point in Image 2: {np.degrees(point_rotation2)} degrees")
+
+    # descriptor1 = myMOPS_instance.my_descriptor(img1, points1[0], point_rotation1, window_size=40)
+    # print(f"Descriptor for first point in Image 1: {descriptor1}")
+    # descriptor1_50 = myMOPS_instance.my_descriptor(img1, points1[50], point_rotation1, window_size=40)
+    # print(f"50th element of Descriptor for first point in Image 1: {descriptor1_50}")
+
+    # descriptor2 = myMOPS_instance.my_descriptor(img2, points2[0], point_rotation2, window_size=40)
+    # print(f"Descriptor for first point in Image 2: {descriptor2}")
+    # descriptor2_50 = myMOPS_instance.my_descriptor(img2, points2[50], point_rotation2, window_size=40)
+    # print(f"50th element of Descriptor for first point in Image 2: {descriptor2_50}")
+
+    # distance = myMOPS_instance.my_distance(descriptor1, descriptor2)
+    # print(f"Distance between first descriptors of Image 1 and Image 2: {distance}")
+
+    # matched_img=myMOPS_instance.my_draw_matches(img1, img2)
+    # cv.imshow("My MOPS Matches", matched_img)
+    # cv.waitKey(0)
+    # cv.destroyAllWindows()
 
 
 

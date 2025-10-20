@@ -23,11 +23,14 @@ import numpy as np
 class myMOPS:
     def __init__(self):
         pass
-    def my_track_points(self, img, maxCorners, qualityLevel, minDistance) -> cv.typing.MatLike:
-        """ Function that find points using cv2.goodFeaturesToTrack . """
-        #ensure image is in grayscale
+    def _to_gray(self, img) -> cv.typing.MatLike:
+        """ Convert image to grayscale if it is not already."""
         if len(img.shape) == 3:
             img = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
+        return img.astype(np.float32)
+    def my_track_points(self, img, maxCorners, qualityLevel, minDistance) -> cv.typing.MatLike:
+        """ Function that find points using cv2.goodFeaturesToTrack . """
+        img = self._to_gray(img)
 
         points = cv.goodFeaturesToTrack(img, mask=None, maxCorners=maxCorners, qualityLevel=qualityLevel, minDistance=minDistance)
 
@@ -35,7 +38,9 @@ class myMOPS:
     def my_point_rotation(self, img, point, window_size) -> float:
         """ Function that given a point and an area around the point finds its rotation"""
         # extract window using cv.getRectSubPix, which interpolates border pixels
-        img_window = cv.getRectSubPix(img, (window_size, window_size), (float(point[0]), float(point[1])))
+        img = self._to_gray(img)
+        x,y = float(point[0]), float(point[1])
+        img_window = cv.getRectSubPix(img, (window_size, window_size), (x, y))
         # Compute gradients
 
         sobelx = cv.Sobel(img_window, ddepth=cv.CV_32F, dx=1, dy=0, ksize=3)
@@ -43,22 +48,29 @@ class myMOPS:
 
         #compute angle histogram
         angles = np.arctan2(sobely, sobelx)
-        hist, bin_edges = np.histogram(angles.ravel(), bins=36, range=(-np.pi, np.pi))
-        #CHECK
-        dominant_angle = bin_edges[np.argmax(hist)]
+        magnitudes = np.sqrt(sobelx**2 + sobely**2)
+        hist, bin_edges = np.histogram(angles.ravel(), bins=36, range=(-np.pi, np.pi),weights=magnitudes.ravel())
+        
+        best_idx = np.argmax(hist)
+        dominant_angle = 0.5*(bin_edges[best_idx] + bin_edges[best_idx+1]) #center of the bin 
         return dominant_angle
     def my_descriptor(self, img, point, dominant_angle, window_size=40) -> np.ndarray:
         """ Function that creates your own descriptor for each point."""
-        patch = cv.getRectSubPix(img, (window_size, window_size), (float(point[0]), float(point[1])))
-        M = cv.getRotationMatrix2D(center=(window_size//2, window_size//2), angle=-np.degrees(dominant_angle), scale=1.0/5.0)
-        rotated = cv.warpAffine(
-            patch,
-            M,
-            (8,8), #directly sample 8x8
-            flags=cv.INTER_LINEAR,
-            borderMode=cv.BORDER_CONSTANT, borderValue=0 #pad with zeros
-        )
-        descriptor = (rotated-rotated.mean())/(rotated.std() + 1e-10)  # Normalize between 0 and 1
+        img = self._to_gray(img)
+        x,y = float(point[0]), float(point[1])
+        img_window = cv.getRectSubPix(img, (window_size, window_size), (x, y))
+
+        # Rotate the window to align with dominant angle
+        center = (window_size / 2, window_size / 2)
+        rotation_matrix = cv.getRotationMatrix2D(center, np.degrees(-dominant_angle), scale=1.0/5.0)
+        rotated_window = cv.warpAffine(img_window, rotation_matrix, (window_size, window_size), flags=cv.INTER_LINEAR)
+
+        # Downsample to 8x8
+        small_window = cv.resize(rotated_window, (8, 8), interpolation=cv.INTER_AREA)
+
+        # Normalize between 0 and 1
+        descriptor = small_window.flatten()
+        descriptor = (descriptor - np.min(descriptor)) / (np.max(descriptor) - np.min(descriptor) + 1e-10)  # add small value to avoid division by zero
         return descriptor
     def my_distance(self, desc1, desc2) -> float:
         """ Create a function that given two descriptors gives a match distance score using the Euclidean Distance."""
@@ -93,29 +105,29 @@ class myMOPS:
     def my_draw_matches(self,img1, img2) -> np.ndarray:
         """ Output an image comparison ("my_match.jpg") in the output directory using your algorithm and using SIFT."""
         # Find points
-        points1 = self.my_track_points(img1, maxCorners=10, qualityLevel=0.01, minDistance=10)
-        points2 = self.my_track_points(img2, maxCorners=10, qualityLevel=0.01, minDistance=10)
+        points1 = self.my_track_points(img1, maxCorners=100, qualityLevel=0.01, minDistance=10)
+        points2 = self.my_track_points(img2, maxCorners=100, qualityLevel=0.01, minDistance=10)
 
         # Compute descriptors
         descriptors1 = []
         for p in points1:
-            angle = self.my_point_rotation(img1, p.astype(int), window_size=40)
-            desc = self.my_descriptor(img1, p.astype(int), angle)
+            angle = self.my_point_rotation(img1, p, window_size=40)
+            desc = self.my_descriptor(img1, p, angle)
             descriptors1.append(desc)
         descriptors2 = []
         for p in points2:
-            angle = self.my_point_rotation(img2, p.astype(int), window_size=40)
-            desc = self.my_descriptor(img2, p.astype(int), angle)
+            angle = self.my_point_rotation(img2, p, window_size=40)
+            desc = self.my_descriptor(img2, p, angle)
             descriptors2.append(desc)
 
         # Match descriptors
-        matches = self.my_match(descriptors1.copy(), descriptors2.copy(), ratio_threshold=0.75)
+        matches = self.my_match(descriptors1.copy(), descriptors2.copy(), ratio_threshold=0.7)
         # Convert points to keypoints
         keypoints1 = self._points_to_keypoints(points1)
         keypoints2 = self._points_to_keypoints(points2)
 
         # Draw matches
-        
+        print(f"Number of matches found: {len(matches)}")
         matched_image = cv.drawMatches(img1, keypoints1, img2, keypoints2, matches, None)
         return matched_image
     
