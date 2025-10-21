@@ -106,8 +106,8 @@ class myMOPS:
     def my_draw_matches(self,img1, img2) -> np.ndarray:
         """ Output an image comparison ("my_match.jpg") in the output directory using your algorithm and using SIFT."""
         # Find points
-        points1 = self.my_track_points(img1, maxCorners=300, qualityLevel=0.01, minDistance=10)
-        points2 = self.my_track_points(img2, maxCorners=300, qualityLevel=0.01, minDistance=10)
+        points1 = self.my_track_points(img1, maxCorners=500, qualityLevel=0.01, minDistance=10)
+        points2 = self.my_track_points(img2, maxCorners=500, qualityLevel=0.01, minDistance=10)
 
         # Compute descriptors
         descriptors1 = []

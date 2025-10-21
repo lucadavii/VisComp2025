@@ -273,9 +273,9 @@ def match_images_SIFT(img1, img2):
     for m, n in matches:
         if m.distance < 0.7 * n.distance:
             good_matches.append(m)
-    #keep first 100 matches only
-    if len(good_matches) > 100:
-        good_matches = good_matches[:100]
+    #keep first 300 matches only
+    if len(good_matches) > 500:
+        good_matches = good_matches[:500]
     # Draw matches
     matched_image = cv.drawMatches(img1, keypoints1, img2, keypoints2, good_matches, None)
     return matched_image
@@ -415,7 +415,8 @@ if __name__ == "__main__":
 
     # #############################################################################
     # # COMMENT THIS BLOCK BEFORE SUBMISSION
-    # # This is just do adjust some environment issues when running locally with vs code
+    # # This is just do adjust some environment issues when running locally with vs code.
+    # # If pathing problems arise, please check this block first.
     # #############################################################################
     # #viscomp2025/starter_code/75169_75214/tp1.py
     # #conda is acting up and doesn't activate in project subfolders, but only in upper directory, probably this issue
