@@ -14,6 +14,11 @@ import glob
 import matplotlib.pyplot as plt
 import json
 from myMOPS import myMOPS
+################################
+# Assuming input and output folder paths as sister directories of the current working directory
+INPUT_FOLDER_PATH = "../input"
+OUTPUT_FOLDER_PATH = "../output"
+################################
 
 #Resize every image in the input folder maintaining the aspect-ratio of the images. The
 #smaller side of each image should be 512 pixels using cv2. I have an output and imput directory and all the images are
@@ -69,16 +74,6 @@ def create_histogram_json(img_rgb_path):
     hist_g /= hist_g.sum()
     hist_b /= hist_b.sum()
 
-
-
-    # Compute histograms using cv2
-    # hist = cv.calcHist([img_rgb], [0, 1, 2], None, [256, 256, 256], [0, 256, 0, 256, 0, 256])
-    # hist = cv.normalize(hist, hist)
-
-    # Split the histogram into its respective channels
-    # hist_r = hist[:, 0, 0]
-    # hist_g = hist[0, :, 0]
-    # hist_b = hist[0, 0, :]
     #save histogram as json
     hist_data = {
         "red": hist_r.tolist(),
@@ -112,11 +107,11 @@ def histogram_distance(histA, histB):
     chi_sq_r = np.sum(((histA[0] - histB[0]) ** 2) / (histA[0] + histB[0] + epsilon))
     chi_sq_g = np.sum(((histA[1] - histB[1]) ** 2) / (histA[1] + histB[1] + epsilon))
     chi_sq_b = np.sum(((histA[2] - histB[2]) ** 2) / (histA[2] + histB[2] + epsilon))
-    print(f"Chi-Square distances - R: {chi_sq_r}, G: {chi_sq_g}, B: {chi_sq_b}")
+    #print(f"Chi-Square distances - R: {chi_sq_r}, G: {chi_sq_g}, B: {chi_sq_b}")
     return np.mean(np.array([chi_sq_r, chi_sq_g, chi_sq_b])) #same thing as computing the chi-squared distance on the combined histogram
 
 def bhattacharyya_distance(histA, histB):
-    # Compute the Bhattacharyya distance for each channel
+    # Compute the Bhattacharyya distance for each channel, used just as test and never actually called
     dist_r = cv.compareHist(histA[0].astype(np.float32), histB[0].astype(np.float32), cv.HISTCMP_BHATTACHARYYA)
     dist_g = cv.compareHist(histA[1].astype(np.float32), histB[1].astype(np.float32), cv.HISTCMP_BHATTACHARYYA)
     dist_b = cv.compareHist(histA[2].astype(np.float32), histB[2].astype(np.float32), cv.HISTCMP_BHATTACHARYYA)
@@ -229,7 +224,7 @@ def common_histogram_and_white_balance(input_dir):
         print(f"Histogram comparison figure saved for folder {folder}")
 
         #apply histogram equalization to each image based on the common histogram
-        ## TODO: substitute original image with white-balanced image
+
         avg_rgb = np.zeros(3, dtype=np.float32)
         for c in range(3):
             #compute average pixel value for each channel from common histogram
@@ -320,7 +315,7 @@ def check_identical_images(input_dir):
             for m, n in matches:
                 if m.distance < 0.7 * n.distance:
                     good_matches.append(m)
-            # If number of good matches is above a threshold, consider images identical, namely 70% of keypoints matched
+            # If number of good matches is above a threshold, consider images identical,
             if len(good_matches) > 500:
                 print(f"Images {os.path.basename(image_paths[0])} and {os.path.basename(img_path)} are identical with {len(good_matches)} good matches.")
                 matched_image = cv.drawMatches(reference_img, keypoints_ref, img, keypoints_img, good_matches, None)
@@ -342,7 +337,7 @@ def print_statistics(dir):
     total_images = 0
     total_groundtruth = 0
 
-    with open("./input/groundtruth.json", "r") as f:
+    with open(os.path.join(INPUT_FOLDER_PATH, "groundtruth.json"), "r") as f:
         groundtruth_data = json.load(f)
 
 
@@ -388,136 +383,82 @@ def print_statistics(dir):
     print(f"TOTAL number of images: {total_images} ground-truth: {total_groundtruth} precision: {total_precision:.3f}")
 
 
-if __name__ == "__main__":
-
-    CHI_SQUARE_THRESHOLD = 0.545
-    #############################################################################
-    # REMOVE THIS BLOCK BEFORE SUBMISSION
-    #
-    #############################################################################
-    #viscomp2025/starter_code/75169_75214/tp1.py
-    #cwd must be viscomp2025/starter_code in order to create input and output directories correctly.
-    #vscode sets the cwd to the folder where the script is located, so we need to change it back to starter_code (parent folder)
-    if not os.getcwd().endswith("starter_code"):
-        print("Changing working directory to starter_code")
-        os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        print("Current working directory:", os.getcwd())
-    #set input folder (already existing) as readonly
-    os.chmod("./input", 0o555)  #read and execute permissions
-    # if the output folder isn't empty, clear it
-    if os.path.exists("./output"):
-        files = glob.glob(os.path.join("./output", "*"))
+def cleanup_output_directory(output_dir):
+    #obtain the desired output structure by removing unneeded files and folders
+    #from the output directory, remove the histogram folder and its contents
+    hist_dir = os.path.join(output_dir, "histograms")
+    if os.path.exists(hist_dir):
+        files = glob.glob(os.path.join(hist_dir, "*"))
         for f in files:
             if os.path.isfile(f):
                 os.remove(f)
-            elif os.path.isdir(f):
-                import shutil
-                shutil.rmtree(f)
-    else:
-        os.makedirs("./output", exist_ok=True)
-    #exit()
+        os.rmdir(hist_dir)
+    #for each similar folder, remove the common_histogram.json file and substitute the original image with the white-balanced one
+    similarity_folders = sorted(glob.glob(os.path.join(output_dir, "similar-*")))
+    for folder in similarity_folders:
+        common_hist_path = os.path.join(folder, "common_histogram.json")
+        if os.path.exists(common_hist_path):
+            os.remove(common_hist_path)
+        #replace original images with white-balanced ones and remove white-balanced images
+        wb_image_paths = sorted(glob.glob(os.path.join(folder, "wb_*.jpg")))
+        for wb_img_path in wb_image_paths:
+            original_img_name = os.path.basename(wb_img_path)[3:]  #remove 'wb_' prefix
+            original_img_path = os.path.join(folder, original_img_name)
+            if os.path.exists(original_img_path):
+                os.remove(original_img_path)
+            #rename white-balanced image to original name
+            os.rename(wb_img_path, original_img_path)
+
+if __name__ == "__main__":
+
+    CHI_SQUARE_THRESHOLD = 0.545
+
+    # #############################################################################
+    # # COMMENT THIS BLOCK BEFORE SUBMISSION
+    # # This is just do adjust some environment issues when running locally with vs code
+    # #############################################################################
+    # #viscomp2025/starter_code/75169_75214/tp1.py
+    # #conda is acting up and doesn't activate in project subfolders, but only in upper directory, probably this issue
+    # #is caused by vscode terminal settings, so we force the working directory to be the starter_code folder
+    # #
+    # #cwd must be viscomp2025/starter_code in order to create input and output directories correctly in local environment.
+    # #vscode sets the cwd to the folder where the script is located, so we need to change it back to starter_code (parent folder)
+    # if not os.getcwd().endswith("starter_code"):
+    #     print("Changing working directory to starter_code")
+    #     os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    #     print("Current working directory:", os.getcwd())
+    # #set input folder (already existing) as readonly
+    # os.chmod("./input", 0o555)  #read and execute permissions
+    # # if the output folder isn't empty, clear it
+    # if os.path.exists("./output"):
+    #     files = glob.glob(os.path.join("./output", "*"))
+    #     for f in files:
+    #         if os.path.isfile(f):
+    #             os.remove(f)
+    #         elif os.path.isdir(f):
+    #             import shutil
+    #             shutil.rmtree(f)
+    # else:
+    #     os.makedirs("./output", exist_ok=True)
+    # # since now we're on the folder above the one containing tp1.py, we need to adjust the input and output folder paths
+    # INPUT_FOLDER_PATH = "./input"
+    # OUTPUT_FOLDER_PATH = "./output"
+    #
     #############################################################################
-    resize_images("./input", "./output", size=512)
-    create_histograms("./output")
-    group_by_similarity("./output", CHI_SQUARE_THRESHOLD)
-    common_histogram_and_white_balance("./output")
+    resize_images(INPUT_FOLDER_PATH, OUTPUT_FOLDER_PATH, size=512)
+    create_histograms(OUTPUT_FOLDER_PATH)
+    group_by_similarity(OUTPUT_FOLDER_PATH, CHI_SQUARE_THRESHOLD)
+    common_histogram_and_white_balance(OUTPUT_FOLDER_PATH)
 
     myMOPS_instance = myMOPS()
-    img1 = cv.imread("./input/109900.jpg")
-    img2 = cv.imread("./input/109901.jpg")
+    img1 = cv.imread(os.path.join(INPUT_FOLDER_PATH, "109900.jpg"))
+    img2 = cv.imread(os.path.join(INPUT_FOLDER_PATH, "109901.jpg"))
     mops_compared_img = match_images_MOPS(img1, img2)
     sift_compared_img = match_images_SIFT(img1, img2)
     #stack images vertically
     combined_img = np.vstack((mops_compared_img, sift_compared_img))
-    cv.imwrite("./output/my_match.jpg", combined_img)
+    cv.imwrite(os.path.join(OUTPUT_FOLDER_PATH, "my_match.jpg"), combined_img)
 
-    check_identical_images("./output")
-    print_statistics("./output")
-    # points1 = myMOPS_instance.my_track_points(cv.cvtColor(img1, cv.COLOR_BGR2GRAY), maxCorners=100, qualityLevel=0.01, minDistance=10)
-    # print(f"Tracked {len(points1)} points in Image 1")
-    # print(points1)
-    
-    # points2 = myMOPS_instance.my_track_points(cv.cvtColor(img2, cv.COLOR_BGR2GRAY), maxCorners=100, qualityLevel=0.01, minDistance=10)
-    # print(f"Tracked {len(points2)} points in Image 2")
-    # print(points2)
-    
-    # point_rotation1 = myMOPS_instance.my_point_rotation(img1, points1[0], window_size=40)
-    # print(f"Point rotation for first point in Image 1: {np.degrees(point_rotation1)} degrees")
-
-    # point_rotation2 = myMOPS_instance.my_point_rotation(img2, points2[0], window_size=40)
-    # print(f"Point rotation for first point in Image 2: {np.degrees(point_rotation2)} degrees")
-
-    # descriptor1 = myMOPS_instance.my_descriptor(img1, points1[0], point_rotation1, window_size=40)
-    # print(f"Descriptor for first point in Image 1: {descriptor1}")
-    # descriptor1_50 = myMOPS_instance.my_descriptor(img1, points1[50], point_rotation1, window_size=40)
-    # print(f"50th element of Descriptor for first point in Image 1: {descriptor1_50}")
-
-    # descriptor2 = myMOPS_instance.my_descriptor(img2, points2[0], point_rotation2, window_size=40)
-    # print(f"Descriptor for first point in Image 2: {descriptor2}")
-    # descriptor2_50 = myMOPS_instance.my_descriptor(img2, points2[50], point_rotation2, window_size=40)
-    # print(f"50th element of Descriptor for first point in Image 2: {descriptor2_50}")
-
-    # distance = myMOPS_instance.my_distance(descriptor1, descriptor2)
-    # print(f"Distance between first descriptors of Image 1 and Image 2: {distance}")
-
-    # matched_img=myMOPS_instance.my_draw_matches(img1, img2)
-    # cv.imshow("My MOPS Matches", matched_img)
-    # cv.waitKey(0)
-    # cv.destroyAllWindows()
-
-
-
-    # # Example of computing Chi-Square distance between two histograms
-    # start_val, end_val = 0, 255  # Exclude first and last bins as they contain possibly over/under-exposed pixels
-    # with open("./output/histograms/100000_histogram.json", "r") as f:
-    #     histA = json.load(f)
-    #     histA = np.array([histA["red"][start_val:end_val], histA["green"][start_val:end_val], histA["blue"][start_val:end_val]],dtype=np.float32) #First index indicates the channel
-    #     #print(histA.shape)
-    # with open("./output/histograms/100001_histogram.json", "r") as f:
-    #     histB = json.load(f)
-    #     histB = np.array([histB["red"][start_val:end_val], histB["green"][start_val:end_val], histB["blue"][start_val:end_val]],dtype=np.float32)  # Combine channels for distance calculation
-    # distance = histogram_distance(histA, histB)
-    # b_dist=bhattacharyya_distance(histA, histB)
-
-    # #as a test, calculate distance between first histogram and all histograms in the folder
-    # image_paths = sorted(glob.glob(os.path.join("./output/histograms/", "*_histogram.json")))
-    # #print(image_paths)
-    # #np array to store distances
-    # distances = np.zeros((len(image_paths), 2)) #2 distances for each image
-    # for i, img_path in enumerate(image_paths):
-    #     with open(img_path, "r") as f:
-    #         hist = json.load(f)
-    #         hist = np.array([hist["red"][start_val:end_val], hist["green"][start_val:end_val], hist["blue"][start_val:end_val]],dtype=np.float32) #First index indicates the channel
-    #         distances[i, 0] = histogram_distance(histA, hist)
-    #         distances[i, 1] = bhattacharyya_distance(histA, hist)
-    # #save distances as csv
-    # np.savetxt("distances.csv", distances, delimiter=",", header="Chi-Square,Bhattacharyya", comments='')
-
-    # target_dir = os.path.join("./output", "similar-0")
-    # os.makedirs(target_dir, exist_ok=True)
-    # for fname in os.listdir("./output"):
-    #     src_path = os.path.join("./output", fname)
-    #     if os.path.isfile(src_path):
-    #         dst_path = os.path.join(target_dir, fname)
-    #         # use os.replace to move/overwrite atomically and avoid issues with existing files
-    #         os.replace(src_path, dst_path)
-
-    # #plot distances in two different plots in the same figure
-    # plt.figure()
-    # plt.subplot(2, 1, 1)
-    # plt.title("Chi-Square Distances from Image 100000")
-    # plt.xlabel("Image Index")
-    # plt.ylabel("Chi-Square Distance")
-    # plt.plot(distances[:, 0], marker='o')
-    # plt.subplot(2, 1, 2)
-    # plt.title("Bhattacharyya Distances from Image 100000")
-    # plt.xlabel("Image Index")
-    # plt.ylabel("Bhattacharyya Distance")
-    # plt.plot(distances[:, 1], marker='o', color='orange')
-    # plt.tight_layout()
-    # plt.show()
-
-    # plot_histogram(histA, "Histogram of Image 100000")
-    # plot_histogram(histB, "Histogram of Image 100001")
-    # # print(f"Chi-Square distance between histograms: {distance}")
-    # # print(f"Bhattacharyya distance between histograms: {b_dist}")
+    check_identical_images(OUTPUT_FOLDER_PATH)
+    print_statistics(OUTPUT_FOLDER_PATH)
+    cleanup_output_directory(OUTPUT_FOLDER_PATH)
