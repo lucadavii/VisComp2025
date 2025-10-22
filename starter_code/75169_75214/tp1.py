@@ -388,7 +388,7 @@ def cleanup_output_directory(output_dir):
     #from the output directory, remove the histogram folder and its contents
     hist_dir = os.path.join(output_dir, "histograms")
     if os.path.exists(hist_dir):
-        files = glob.glob(os.path.join(hist_dir, "*"))
+        files = sorted(glob.glob(os.path.join(hist_dir, "*")))
         for f in files:
             if os.path.isfile(f):
                 os.remove(f)
@@ -414,6 +414,7 @@ if __name__ == "__main__":
     CHI_SQUARE_THRESHOLD = 0.545
 
     # #############################################################################
+    # # PROJECT CODE BELOW THIS BLOCK
     # # COMMENT THIS BLOCK BEFORE SUBMISSION
     # # This is just do adjust some environment issues when running locally with vs code.
     # # If pathing problems arise, please check this block first.
