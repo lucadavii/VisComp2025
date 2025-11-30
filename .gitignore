@@ -216,3 +216,4 @@ __marimo__/
 PekingU/
 wandb/
 *.zip
+Assignment2/rt_detr_taco_best/model.safetensors
